@@ -1686,6 +1686,10 @@ function sbRemoveRow() {
 
 function getAdjustedSureRows() {
   return sbRows.map((row, idx) => {
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
+=======
+    const aumento = Number(row.aumento||0)/100;
+    main
     const adjustedOdd = Number(row.odd) * (1 + (Number(row.aumento||0) / 100));
     return {
       ...row,
@@ -1707,10 +1711,16 @@ function calcSurebet() {
     const houses = rows.map(r=>r.house);
     const { mode: engineMode } = validateSureRows(rows);
     const fixedRows = rows
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
       .map((row, index) => ({ index, fixed: !!row.fixed, stake: Number(row.manualStake) }))
       .filter(item => item.fixed);
     if(fixedRows.length > 1) throw new Error('Apenas 1 linha pode ficar fixa.');
     if(fixedRows.length === 1 && (!Number.isFinite(fixedRows[0].stake) || fixedRows[0].stake <= 0)) throw new Error('Linha fixa precisa de valor/stake válido.');
+=======
+      .map((row, index) => ({ index, stake: Number(row.manualStake) }))
+      .filter(item => Number.isFinite(item.stake) && item.stake > 0);
+    if(fixedRows.length > 1) throw new Error('Apenas 1 linha pode ficar fixa.');
+ main
 
     let result;
     if(engineMode === 'exchange') {
@@ -1851,12 +1861,18 @@ function calc2UP() {
 
   const coveredV = V * (coverPct / 100);
   const c = r2(coveredV / V2);
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
   const retornoCobertura = r2(V2 * c);
   const valorSemVirada = r2(V - c);
   const ganhoExtraVirada = r2(Math.max(0, retornoCobertura - V));
   const valorVirada = r2(valorSemVirada + ganhoExtraVirada);
   const duploGreen = r2(V);
   const coberturaTotal = coverPct >= 100;
+=======
+  const lucroSemVirada = r2(V2 * c);
+  const lucroVirada = r2(V - c);
+  const duploGreen = r2(V);
+ main
 
   document.getElementById('u_res').innerHTML = `
     <div class="result-box">
@@ -1868,6 +1884,7 @@ function calc2UP() {
       </div>
       <div class="g2">
         <div class="metric-card">
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
           <div class="metric-label">Se não houver virada</div>
           <div class="metric-value green">${brl(valorSemVirada)}</div>
           <div class="metric-sub">Valor antecipado menos a stake da cobertura.</div>
@@ -1876,10 +1893,21 @@ function calc2UP() {
           <div class="metric-label">Se houver virada do adversário</div>
           <div class="metric-value accent">${brl(valorVirada)}</div>
           <div class="metric-sub">${coberturaTotal ? 'Cobertura de 100% neutraliza ganho extra na virada.' : 'Inclui apenas o extra líquido da cobertura.'}</div>
+=======
+          <div class="metric-label">Lucro sem virada</div>
+          <div class="metric-value green">${brl(lucroSemVirada)}</div>
+          <div class="metric-sub">Resultado de V2 × c.</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Lucro virada</div>
+          <div class="metric-value accent">${brl(lucroVirada)}</div>
+          <div class="metric-sub">Resultado de V - c.</div>
+main
         </div>
       </div>
       <div class="g3 mt-16">
         <div class="metric-card">
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
           <div class="metric-label">Retorno da cobertura (V2 × c)</div>
           <div class="metric-value">${brl(retornoCobertura)}</div>
         </div>
@@ -1890,6 +1918,18 @@ function calc2UP() {
         <div class="metric-card">
           <div class="metric-label">Duplo green</div>
           <div class="metric-value">${brl(duploGreen)}</div>
+=======
+          <div class="metric-label">Valor pago antecipado (V)</div>
+          <div class="metric-value">${brl(V)}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Odd ao vivo (V2)</div>
+          <div class="metric-value mono">${V2.toFixed(2)}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Cobertura de V</div>
+          <div class="metric-value">${pct(coverPct)}</div>
+ main
         </div>
       </div>
       <div class="mt-8 fs-12 text-muted">Fórmula usada: <span class="mono">stake = (V × cobertura) / V2 = c</span> = (${brl(V)} × ${coverPct.toFixed(0)}%) / ${V2.toFixed(2)} = <strong>${brl(c)}</strong></div>
