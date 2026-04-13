@@ -825,7 +825,8 @@ function calcTatica({totalStake, odds}) {
   if(o.length<2) throw new Error('Informe ao menos 2 odds (>1).');
   if(o.some(x=>!Number.isFinite(x)||x<=1)) throw new Error('Todas as odds devem ser > 1.');
   const invSum = o.reduce((a,x)=>a+1/x, 0);
-  const exactStakes = o.map(odd => totalStake * ((1/odd) / invSum));
+  const equalReturn = totalStake / invSum;
+  const exactStakes = o.map(odd => equalReturn / odd);
   const rounded = exactStakes.map(v => r2(v));
   const diff = r2(totalStake - rounded.reduce((a,v)=>a+v,0));
   rounded[rounded.length-1] = r2(rounded[rounded.length-1] + diff);
@@ -837,12 +838,113 @@ function calcTatica({totalStake, odds}) {
   const minProfit = r2(Math.min(...rows.map(r=>r.profit)));
   return {
     inverseSum:r2(invSum),
-    equalReturn:r2(totalStake/invSum),
+    equalReturn:r2(equalReturn),
     totalStake:r2(totalStake),
     minProfit,
     profitPct:r2((minProfit/totalStake)*100),
     isArb:invSum<1,
     rows
+  };
+}
+
+function validateSureRows(rows) {
+  if(!Array.isArray(rows) || rows.length < 2) throw new Error('Informe ao menos 2 linhas.');
+  rows.forEach((row, i)=> {
+    if(!Number.isFinite(Number(row.odd))) throw new Error(`Valor ausente na odd da linha ${i+1}.`);
+    if(Number(row.odd) <= 1) throw new Error('Odds inválidas (<=1).');
+    if((row.type||'back') === 'lay' && !Number.isFinite(Number(row.commission))) throw new Error(`Valor ausente na comissão da linha ${i+1}.`);
+  });
+  const layRows = rows.filter(r => (r.type||'back') === 'lay');
+  if(layRows.length > 1) throw new Error('Não é permitido múltiplas linhas Lay.');
+  const hasLay = layRows.length === 1;
+  if(hasLay && rows.length > 2) throw new Error('Modo exchange com Lay permite no máximo 2 linhas.');
+  if(hasLay && rows.length !== 2) throw new Error('Modo exchange exige exatamente 2 linhas.');
+  return { hasLay, mode: hasLay ? 'exchange' : 'arbitrage' };
+}
+
+function calcArbitrageWithFixedRow({rows, fixedIndex, fixedStake}) {
+  if(!Number.isFinite(fixedStake) || fixedStake <= 0) throw new Error('Stake fixa da linha travada inválida.');
+  const odds = rows.map(r=>Number(r.odd));
+  const fixedOdd = odds[fixedIndex];
+  const equalReturn = fixedStake * fixedOdd;
+  const stakes = odds.map((odd, i)=> i===fixedIndex ? fixedStake : (equalReturn / odd));
+  const totalStake = stakes.reduce((a,v)=>a+v,0);
+  const invSum = odds.reduce((a,v)=>a+(1/v),0);
+  const resultRows = odds.map((odd,i)=>{
+    const stake = r2(stakes[i]);
+    const ret = r2(stake * odd);
+    return { scenario:`Resultado ${i+1}`, odd:r2(odd), stake, ret, profit:r2(ret-totalStake) };
+  });
+  const minProfit = r2(equalReturn - totalStake);
+  return {
+    inverseSum:r2(invSum),
+    equalReturn:r2(equalReturn),
+    totalStake:r2(totalStake),
+    minProfit,
+    profitPct: totalStake>0 ? r2((minProfit/totalStake)*100) : 0,
+    isArb: invSum < 1,
+    rows: resultRows
+  };
+}
+
+function calcExchangeSurebet({rows, fixedIndex=null, fixedStake=null}) {
+  const backIndex = rows.findIndex(r => r.type === 'back');
+  const layIndex = rows.findIndex(r => r.type === 'lay');
+  if(backIndex === -1 || layIndex === -1) throw new Error('Modo exchange exige 1 Back e 1 Lay.');
+
+  const backOdd = Number(rows[backIndex].odd);
+  const layOdd = Number(rows[layIndex].odd);
+  const commission = Math.max(0, Number(rows[layIndex].commission||0)) / 100;
+  const layOddReal = layOdd * (1 - commission);
+  if(layOddReal <= 0) throw new Error('Comissão inválida para cálculo do Lay.');
+
+  let backStake;
+  if(Number.isFinite(fixedStake) && fixedStake > 0 && Number.isInteger(fixedIndex)) {
+    if(fixedIndex === backIndex) {
+      backStake = fixedStake;
+    } else if(fixedIndex === layIndex) {
+      backStake = (fixedStake * layOddReal) / backOdd;
+    } else {
+      throw new Error('Índice da linha fixa inválido.');
+    }
+  } else {
+    backStake = Number(rows[backIndex].manualStake||0);
+    if(!Number.isFinite(backStake) || backStake<=0) throw new Error('Informe stake de Back válida para o modo exchange.');
+  }
+
+  const layStake = (backStake * backOdd) / layOddReal;
+  const liability = layStake * (layOdd - 1);
+  const profitBack = (backStake * backOdd) - liability - backStake;
+  const profitLay = (layStake * (1 - commission)) - backStake;
+
+  const arranged = rows.map((row, i)=>{
+    const isBack = i === backIndex;
+    const stake = isBack ? backStake : layStake;
+    const rowProfit = isBack ? profitBack : profitLay;
+    const rowLiability = isBack ? 0 : liability;
+    return {
+      scenario:`Resultado ${i+1}`,
+      odd:r2(Number(row.odd)),
+      stake:r2(stake),
+      ret:r2(stake + rowProfit),
+      profit:r2(rowProfit),
+      type: row.type,
+      commissionPct: isBack ? 0 : r2(commission*100),
+      liability:r2(rowLiability)
+    };
+  });
+
+  const maxExposure = r2(Math.max(backStake + liability, backStake));
+  const minProfit = r2(Math.min(profitBack, profitLay));
+  return {
+    inverseSum: null,
+    equalReturn: null,
+    totalStake: r2(backStake + layStake),
+    maxExposure,
+    minProfit,
+    profitPct: maxExposure>0 ? r2((minProfit/maxExposure)*100) : 0,
+    isArb: minProfit > 0,
+    rows: arranged
   };
 }
 
@@ -1522,7 +1624,7 @@ function sbRemoveRow() {
 function getAdjustedSureRows() {
   return sbRows.map((row, idx) => {
     const aumento = Number(row.aumento||0)/100;
-    const adjustedOdd = Number(row.odd) * (1 + aumento);
+    const adjustedOdd = Number(row.odd) * (1 + (Number(row.aumento||0) / 100));
     return {
       ...row,
       idx,
@@ -1541,31 +1643,44 @@ function calcSurebet() {
     const primaryStake = Number(document.getElementById('s_primary_stake').value);
     const rows = getAdjustedSureRows();
     const houses = rows.map(r=>r.house);
-    const hasLay = rows.some(r=>r.type==='lay');
-    let result;
+    const { mode: engineMode } = validateSureRows(rows);
+    const fixedRows = rows
+      .map((row, index) => ({ index, stake: Number(row.manualStake) }))
+      .filter(item => Number.isFinite(item.stake) && item.stake > 0);
+    if(fixedRows.length > 1) throw new Error('Apenas 1 linha pode ficar fixa.');
 
-    if(hasLay || sbPrimaryLocked) {
-      if(rows.length !== 2) throw new Error('Sportbook + Exchange e trava primária funcionam com 2 linhas.');
+    let result;
+    if(engineMode === 'exchange') {
       if(mode === 'manual') {
         result = calcSurebetTwoWayManual({
           rows,
           stakes: rows.map(r => Number(r.manualStake||0))
         });
       } else {
-        result = calcSurebetTwoWay({
+        const fixed = fixedRows[0] || (sbPrimaryLocked ? { index:0, stake: primaryStake } : null);
+        result = calcExchangeSurebet({
           rows,
-          primaryStake: primaryStake || Number(rows[0].manualStake||0) || getSuggestedStake(),
-          lockPrimaryStake: sbPrimaryLocked,
-          totalBudget: total
+          fixedIndex: fixed?.index ?? null,
+          fixedStake: fixed?.stake ?? null
         });
       }
-    } else if(mode==='manual') {
+    } else if(mode === 'manual') {
       const odds = rows.map(r => Number(r.odd));
       const stakes = rows.map(r => Number(r.manualStake||0));
       result = calcManualDutch({odds, stakes});
     } else {
-      const odds = rows.map(r => Number(r.odd));
-      result = calcTatica({totalStake:total, odds});
+      if(fixedRows.length === 1) {
+        result = calcArbitrageWithFixedRow({
+          rows,
+          fixedIndex: fixedRows[0].index,
+          fixedStake: fixedRows[0].stake
+        });
+      } else if(sbPrimaryLocked) {
+        result = calcArbitrageWithFixedRow({ rows, fixedIndex: 0, fixedStake: primaryStake });
+      } else {
+        const odds = rows.map(r => Number(r.odd));
+        result = calcTatica({totalStake:total, odds});
+      }
     }
 
     renderSureResult(result, houses, rows);
@@ -1657,11 +1772,11 @@ function setDgPct(v) {
 }
 
 function calc2UP() {
-  const paidEarly = Number(document.getElementById('u_x').value);
-  const oppOdd = Number(document.getElementById('u_y').value);
+  const V = Number(document.getElementById('u_x').value);
+  const V2 = Number(document.getElementById('u_y').value);
   const coverPct = Number(document.getElementById('u_pct')?.value||100);
-  if(!Number.isFinite(paidEarly) || paidEarly <= 0 || !Number.isFinite(oppOdd) || oppOdd <= 1){
-    document.getElementById('u_res').innerHTML=`<div class="alert alert-error">✗ Preencha um valor antecipado válido e uma odd do adversário maior que 1.</div>`;
+  if(!Number.isFinite(V) || V <= 0 || !Number.isFinite(V2) || V2 <= 1){
+    document.getElementById('u_res').innerHTML=`<div class="alert alert-error">✗ Preencha um valor antecipado válido e uma odd ao vivo maior que 1.</div>`;
     return;
   }
   if(!Number.isFinite(coverPct) || coverPct < 0 || coverPct > 100) {
@@ -1669,49 +1784,47 @@ function calc2UP() {
     return;
   }
 
-  const pctFactor = coverPct / 100;
-  const targetCoveredValue = r2(paidEarly * pctFactor);
-  const hedgeStake = r2(targetCoveredValue / oppOdd);
-  const hedgeProfitIfComeback = r2(hedgeStake * (oppOdd - 1));
-  const netIfNoComeback = r2(paidEarly - hedgeStake);
-  const netIfComeback = r2(paidEarly + hedgeProfitIfComeback);
-  const extraIfComebackVsNoComeback = r2(netIfComeback - netIfNoComeback);
+  const coveredV = V * (coverPct / 100);
+  const c = r2(coveredV / V2);
+  const lucroSemVirada = r2(V2 * c);
+  const lucroVirada = r2(V - c);
+  const duploGreen = r2(V);
 
   document.getElementById('u_res').innerHTML = `
     <div class="result-box">
       <div class="result-head">
         <span class="badge badge-accent">Cobertura de duplo green</span>
-        <div class="result-stat"><span class="result-stat-label">Stake de cobertura</span><span class="result-stat-value text-accent">${brl(hedgeStake)}</span></div>
+        <div class="result-stat"><span class="result-stat-label">Stake de cobertura</span><span class="result-stat-value text-accent">${brl(c)}</span></div>
         <div class="result-stat"><span class="result-stat-label">Cobertura escolhida</span><span class="result-stat-value">${pct(coverPct)}</span></div>
-        <div class="result-stat"><span class="result-stat-label">Valor coberto</span><span class="result-stat-value">${brl(targetCoveredValue)}</span></div>
+        <div class="result-stat"><span class="result-stat-label">Duplo green</span><span class="result-stat-value">${brl(duploGreen)}</span></div>
       </div>
       <div class="g2">
         <div class="metric-card">
-          <div class="metric-label">Se não houver virada</div>
-          <div class="metric-value green">${brl(netIfNoComeback)}</div>
-          <div class="metric-sub">Valor antecipado menos a stake de cobertura perdida.</div>
+          <div class="metric-label">Lucro sem virada</div>
+          <div class="metric-value green">${brl(lucroSemVirada)}</div>
+          <div class="metric-sub">Resultado de V2 × c.</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Se houver virada do adversário</div>
-          <div class="metric-value accent">${brl(netIfComeback)}</div>
-          <div class="metric-sub">Valor antecipado + lucro da cobertura no adversário.</div>
+          <div class="metric-label">Lucro virada</div>
+          <div class="metric-value accent">${brl(lucroVirada)}</div>
+          <div class="metric-sub">Resultado de V - c.</div>
         </div>
       </div>
       <div class="g3 mt-16">
         <div class="metric-card">
-          <div class="metric-label">Lucro da cobertura se virar</div>
-          <div class="metric-value">${brl(hedgeProfitIfComeback)}</div>
+          <div class="metric-label">Valor pago antecipado (V)</div>
+          <div class="metric-value">${brl(V)}</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Ganho extra se virar</div>
-          <div class="metric-value">${brl(extraIfComebackVsNoComeback)}</div>
+          <div class="metric-label">Odd ao vivo (V2)</div>
+          <div class="metric-value mono">${V2.toFixed(2)}</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Odd adversário</div>
-          <div class="metric-value mono">${oppOdd.toFixed(2)}</div>
+          <div class="metric-label">Cobertura de V</div>
+          <div class="metric-value">${pct(coverPct)}</div>
         </div>
       </div>
-      <div class="mt-8 fs-12 text-muted">Fórmula usada: <span class="mono">(valor antecipado × % de cobertura) / odd do adversário</span> = (${brl(paidEarly)} × ${coverPct.toFixed(0)}%) / ${oppOdd.toFixed(2)} = <strong>${brl(hedgeStake)}</strong></div>
+      <div class="mt-8 fs-12 text-muted">Fórmula usada: <span class="mono">stake = (V × cobertura) / V2 = c</span> = (${brl(V)} × ${coverPct.toFixed(0)}%) / ${V2.toFixed(2)} = <strong>${brl(c)}</strong></div>
     </div>`;
 }
 
