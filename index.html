@@ -372,13 +372,19 @@
     /* ===== SURE BET ROWS ===== */
     .sure-row {
       display: grid;
-      grid-template-columns: 110px 1fr 110px 90px 90px;
+      grid-template-columns: 140px minmax(150px,1.4fr) repeat(4, minmax(82px,0.8fr)) minmax(170px,1fr);
       gap: 10px;
       align-items: end;
-      padding: 10px 0;
+      padding: 12px 0;
       border-bottom: 1px solid var(--line);
     }
     .sure-row:last-child { border-bottom: none; }
+    .sure-card-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+    .sure-head-right { display:flex; align-items:center; gap:8px; }
+    .sure-profit-chip { border:1px solid rgba(0,230,118,0.3); background:rgba(0,230,118,0.12); color:var(--green); border-radius:999px; padding:6px 10px; font-family:var(--mono); font-size:12px; }
+    .sure-grid-btn { width:30px; height:30px; border-radius:8px; border:1px solid var(--line2); background:var(--bg3); color:var(--text2); }
+    .sure-grid-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .sure-rows-card { border:1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; background: rgba(8,12,17,0.55); }
     .sure-row-num {
       display: flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 50%;
@@ -399,8 +405,25 @@
       cursor: pointer; transition: all var(--transition);
       background: transparent; color: var(--muted);
     }
-    .type-btn.active-back { background: rgba(0,212,255,0.15); color: var(--accent); }
-    .type-btn.active-lay { background: rgba(255,183,0,0.15); color: var(--warn); }
+    .type-btn.active-back, .type-btn.active-lay { background: rgba(0,230,118,0.22); color: var(--green); }
+    .sure-side {
+      display:flex; align-items:center; justify-content:flex-end; gap:8px;
+    }
+    .mini-btn {
+      border:1px solid var(--line2); background:var(--bg3); color:var(--text2);
+      border-radius:8px; padding:7px 9px; font-size:11px; font-weight:600;
+      display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+    }
+    .mini-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+    .line-result {
+      min-width:72px; text-align:right; font-family:var(--mono); font-size:16px; font-weight:600; color:var(--green);
+    }
+    .sure-actions-center { display:flex; justify-content:center; gap:12px; margin-top:12px; }
+    .circle-btn {
+      width:34px; height:34px; border-radius:50%; border:1px solid var(--line2); background:var(--bg3); color:var(--text); cursor:pointer;
+      font-size:18px; line-height:1;
+    }
+    .circle-btn:hover { border-color: var(--accent); color: var(--accent); }
 
     /* ===== EVOLUTION BARS ===== */
     .evo-item { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
@@ -497,8 +520,15 @@
       .topbar-right { gap: 6px; }
       .mobile-nav-toggle { display:inline-flex; }
       .topbar-right .btn.btn-ghost:not(.mobile-nav-toggle) { display:none; }
-      .sure-row { grid-template-columns: 1fr; gap: 12px; padding: 12px 0; }
-      .table-wrap { overflow: visible; }
+      .sure-row { grid-template-columns: 1fr !important; gap: 12px; padding: 12px 0; }
+      .sure-side { justify-content: flex-start; flex-wrap: wrap; }
+      .line-result { text-align: left; }
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .table-wrap table { min-width: 640px; }
+      input, select, textarea, .btn { min-width: 0; }
+      .result-head { gap: 8px; }
+      .result-stat { min-width: 120px; }
+      .actions .btn { width: 100%; justify-content: center; }
       table.mobile-cards, table.mobile-cards thead, table.mobile-cards tbody, table.mobile-cards tr, table.mobile-cards td { display: block; width: 100%; }
       table.mobile-cards thead { display: none; }
       table.mobile-cards tbody { display: grid; gap: 12px; }
@@ -525,6 +555,10 @@
       .g2, .g3 { grid-template-columns: 1fr; }
       .topbar-right .btn-danger { display:none; }
       .quick-chip { flex: 1 1 calc(25% - 8px); text-align:center; }
+      .content { padding: 12px; }
+      .card, .filter-bar { padding: 14px; }
+      .result-stat { min-width: 100%; }
+      .result-stat-value { font-size: 18px; }
     }
 
     /* ===== EXTRAS ===== */
@@ -1450,16 +1484,23 @@ function resultPill(r) {
 
 let sbMode = 'calcpro';
 let sbPrimaryLocked = false;
+let sbRowResults = [];
 let sbRows = [
-  { house:'Bet365', odd:2.1, manualStake:'', commission:0, aumento:0, type:'back' },
-  { house:'Betfair Exchange', odd:2.05, manualStake:'', commission:6.5, aumento:0, type:'lay' },
+  { house:'Bet365', odd:2.1, manualStake:'', commission:0, aumento:0, type:'back', fixed:false, freebet:false },
+  { house:'Betfair Exchange', odd:2.05, manualStake:'', commission:6.5, aumento:0, type:'lay', fixed:false, freebet:false },
 ];
 
 function renderSurebet() {
   document.getElementById('view').innerHTML = `
     <div class="g2 section">
       <div class="card gap">
-        <div class="card-title"><span class="card-title-icon">⊕</span> Calculadora</div>
+        <div class="sure-card-head">
+          <div class="card-title"><span class="card-title-icon">⊕</span> Calculadora ArbPro</div>
+          <div class="sure-head-right">
+            <span class="sure-profit-chip">Lucro: ${sbRowResults.length ? brl(sbRowResults.reduce((a,v)=>a+v,0)) : 'R$ 0,00'}</span>
+            <button class="sure-grid-btn" type="button" aria-label="Visualização em grade">◫</button>
+          </div>
+        </div>
         <div class="seg-ctrl" style="margin-bottom:4px">
           <button class="seg-btn ${sbMode==='calcpro'?'active':''}" onclick="switchSbMode('calcpro')">◈ Surebet</button>
           <button class="seg-btn ${sbMode==='2up'?'active':''}" onclick="switchSbMode('2up')">⊞ Duplo Green</button>
@@ -1499,15 +1540,15 @@ function renderSurebet() {
 
           <div class="alert alert-info">Mistura sportbook + exchange funciona em 2 linhas. Use Back em uma ponta e Lay na outra. Em cenários com 3+ linhas, a calculadora usa o motor tradicional de Back.</div>
 
-          <div>
+          <div class="sure-rows-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <label style="margin:0">Linhas de odds</label>
-              <div style="display:flex;gap:6px">
-                <button class="btn btn-sm" onclick="sbRemoveRow()">− Remover</button>
-                <button class="btn btn-sm" onclick="sbAddRow()">+ Adicionar</button>
-              </div>
             </div>
             <div id="sureRows" class="sure-rows-wrap"></div>
+            <div class="sure-actions-center">
+              <button class="circle-btn" type="button" onclick="sbRemoveRow()">−</button>
+              <button class="circle-btn" type="button" onclick="sbAddRow()">+</button>
+            </div>
           </div>
           <div class="actions">
             <button class="btn btn-primary" onclick="calcSurebet()">⊕ Calcular Surebet</button>
@@ -1580,39 +1621,61 @@ function drawSureRows() {
   const wrap = document.getElementById('sureRows');
   if(!wrap) return;
   wrap.innerHTML = sbRows.map((row, i)=>`
-    <div class="sure-row" style="grid-template-columns:100px 1.2fr 100px 110px 100px 90px">
+    <div class="sure-row">
       <div class="field">
         <label>Tipo</label>
-        <select onchange="sbRows[${i}].type=this.value">
-          <option value="back" ${row.type==='back'?'selected':''}>Back</option>
-          <option value="lay" ${row.type==='lay'?'selected':''}>Lay</option>
-        </select>
+        <div class="type-toggle">
+          <button class="type-btn ${row.type==='back'?'active-back':''}" type="button" onclick="sbSetType(${i},'back')">Back</button>
+          <button class="type-btn ${row.type==='lay'?'active-lay':''}" type="button" onclick="sbSetType(${i},'lay')">Lay</button>
+        </div>
       </div>
       <div class="field">
-        <label>Operador ${i+1}</label>
-        <input placeholder="Casa ou exchange" value="${esc(row.house)}" oninput="sbRows[${i}].house=this.value">
+        <label>Casa</label>
+        <input placeholder="Ex: Bet365" value="${esc(row.house)}" oninput="sbRows[${i}].house=this.value">
+      </div>
+      <div class="field">
+        <label>Valor</label>
+        <input type="number" step="0.01" value="${row.manualStake}" oninput="sbRows[${i}].manualStake=this.value">
       </div>
       <div class="field">
         <label>Odd</label>
         <input type="number" step="0.01" value="${row.odd}" oninput="sbRows[${i}].odd=this.value">
       </div>
       <div class="field">
-        <label>Stake manual</label>
-        <input type="number" step="0.01" value="${row.manualStake}" oninput="sbRows[${i}].manualStake=this.value">
-      </div>
-      <div class="field">
-        <label>Comissão exchange %</label>
+        <label>Comissão</label>
         <input type="number" step="0.1" value="${row.commission||0}" oninput="sbRows[${i}].commission=this.value">
       </div>
       <div class="field">
-        <label>Aumento %</label>
+        <label>Aumento</label>
         <input type="number" step="0.1" value="${row.aumento||0}" oninput="sbRows[${i}].aumento=this.value">
+      </div>
+      <div class="sure-side">
+        <button class="mini-btn ${row.fixed?'active':''}" type="button" onclick="sbToggleFixed(${i})">📌 Fixar</button>
+        <button class="mini-btn ${row.freebet?'active':''}" type="button" onclick="sbToggleFreebet(${i})">◎ Freebet</button>
+        <span class="line-result">${brl(sbRowResults[i]||0)}</span>
       </div>
     </div>`).join('');
 }
 
+function sbSetType(index, type) {
+  if(!sbRows[index]) return;
+  sbRows[index].type = type;
+  drawSureRows();
+}
+
+function sbToggleFixed(index) {
+  sbRows = sbRows.map((row, i)=> ({ ...row, fixed: i===index ? !row.fixed : false }));
+  drawSureRows();
+}
+
+function sbToggleFreebet(index) {
+  if(!sbRows[index]) return;
+  sbRows[index].freebet = !sbRows[index].freebet;
+  drawSureRows();
+}
+
 function sbAddRow() {
-  sbRows.push({house:`Operador ${sbRows.length+1}`, odd:2, manualStake:'', commission:0, aumento:0, type:'back'});
+  sbRows.push({house:`Operador ${sbRows.length+1}`, odd:2, manualStake:'', commission:0, aumento:0, type:'back', fixed:false, freebet:false});
   drawSureRows();
 }
 function sbRemoveRow() {
@@ -1623,7 +1686,10 @@ function sbRemoveRow() {
 
 function getAdjustedSureRows() {
   return sbRows.map((row, idx) => {
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
+=======
     const aumento = Number(row.aumento||0)/100;
+    main
     const adjustedOdd = Number(row.odd) * (1 + (Number(row.aumento||0) / 100));
     return {
       ...row,
@@ -1645,9 +1711,16 @@ function calcSurebet() {
     const houses = rows.map(r=>r.house);
     const { mode: engineMode } = validateSureRows(rows);
     const fixedRows = rows
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
+      .map((row, index) => ({ index, fixed: !!row.fixed, stake: Number(row.manualStake) }))
+      .filter(item => item.fixed);
+    if(fixedRows.length > 1) throw new Error('Apenas 1 linha pode ficar fixa.');
+    if(fixedRows.length === 1 && (!Number.isFinite(fixedRows[0].stake) || fixedRows[0].stake <= 0)) throw new Error('Linha fixa precisa de valor/stake válido.');
+=======
       .map((row, index) => ({ index, stake: Number(row.manualStake) }))
       .filter(item => Number.isFinite(item.stake) && item.stake > 0);
     if(fixedRows.length > 1) throw new Error('Apenas 1 linha pode ficar fixa.');
+ main
 
     let result;
     if(engineMode === 'exchange') {
@@ -1690,6 +1763,8 @@ function calcSurebet() {
 }
 
 function renderSureResult(result, houses, sourceRows) {
+  sbRowResults = result.rows.map(r => Number(r.profit||0));
+  drawSureRows();
   const marginPct = result.maxExposure ? r2((result.minProfit/result.maxExposure)*100) : r2((1-result.inverseSum)*100);
   let statusBadge;
   if(result.isArb && marginPct>=0.5) statusBadge = `<span class="badge badge-green">✓ Sure válida</span>`;
@@ -1786,9 +1861,18 @@ function calc2UP() {
 
   const coveredV = V * (coverPct / 100);
   const c = r2(coveredV / V2);
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
+  const retornoCobertura = r2(V2 * c);
+  const valorSemVirada = r2(V - c);
+  const ganhoExtraVirada = r2(Math.max(0, retornoCobertura - V));
+  const valorVirada = r2(valorSemVirada + ganhoExtraVirada);
+  const duploGreen = r2(V);
+  const coberturaTotal = coverPct >= 100;
+=======
   const lucroSemVirada = r2(V2 * c);
   const lucroVirada = r2(V - c);
   const duploGreen = r2(V);
+ main
 
   document.getElementById('u_res').innerHTML = `
     <div class="result-box">
@@ -1800,6 +1884,16 @@ function calc2UP() {
       </div>
       <div class="g2">
         <div class="metric-card">
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
+          <div class="metric-label">Se não houver virada</div>
+          <div class="metric-value green">${brl(valorSemVirada)}</div>
+          <div class="metric-sub">Valor antecipado menos a stake da cobertura.</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Se houver virada do adversário</div>
+          <div class="metric-value accent">${brl(valorVirada)}</div>
+          <div class="metric-sub">${coberturaTotal ? 'Cobertura de 100% neutraliza ganho extra na virada.' : 'Inclui apenas o extra líquido da cobertura.'}</div>
+=======
           <div class="metric-label">Lucro sem virada</div>
           <div class="metric-value green">${brl(lucroSemVirada)}</div>
           <div class="metric-sub">Resultado de V2 × c.</div>
@@ -1808,10 +1902,23 @@ function calc2UP() {
           <div class="metric-label">Lucro virada</div>
           <div class="metric-value accent">${brl(lucroVirada)}</div>
           <div class="metric-sub">Resultado de V - c.</div>
+main
         </div>
       </div>
       <div class="g3 mt-16">
         <div class="metric-card">
+ codex/modify-html-for-betting-tool-logic-fixes-wz9267
+          <div class="metric-label">Retorno da cobertura (V2 × c)</div>
+          <div class="metric-value">${brl(retornoCobertura)}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Ganho extra na virada</div>
+          <div class="metric-value">${brl(ganhoExtraVirada)}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Duplo green</div>
+          <div class="metric-value">${brl(duploGreen)}</div>
+=======
           <div class="metric-label">Valor pago antecipado (V)</div>
           <div class="metric-value">${brl(V)}</div>
         </div>
@@ -1822,6 +1929,7 @@ function calc2UP() {
         <div class="metric-card">
           <div class="metric-label">Cobertura de V</div>
           <div class="metric-value">${pct(coverPct)}</div>
+ main
         </div>
       </div>
       <div class="mt-8 fs-12 text-muted">Fórmula usada: <span class="mono">stake = (V × cobertura) / V2 = c</span> = (${brl(V)} × ${coverPct.toFixed(0)}%) / ${V2.toFixed(2)} = <strong>${brl(c)}</strong></div>
